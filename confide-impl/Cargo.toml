@@ -1,0 +1,6 @@
+[package]
+name = "confide-impl"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

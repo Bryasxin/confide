@@ -47,6 +47,7 @@ enum FieldAnnotation {
     DefaultExpr(Expr),
     DefaultDefault,
     DurationExpr(String),
+    BytesExpr(String),
 }
 
 struct FieldAttr {
@@ -68,6 +69,7 @@ fn extract_field_attr(attrs: &[Attribute]) -> syn::Result<FieldAttr> {
                         Some(FieldDefault::Expr(expr)) => Some(FieldAnnotation::DefaultExpr(expr)),
                         Some(FieldDefault::Bare) => Some(FieldAnnotation::DefaultDefault),
                         Some(FieldDefault::Duration(s)) => Some(FieldAnnotation::DurationExpr(s)),
+                        Some(FieldDefault::Bytes(s)) => Some(FieldAnnotation::BytesExpr(s)),
                         None => None,
                     };
                     return Ok(FieldAttr {
@@ -89,6 +91,7 @@ enum FieldDefault {
     Expr(Expr),
     Bare,
     Duration(String),
+    Bytes(String),
 }
 
 struct FieldConfideArgs {
@@ -122,6 +125,18 @@ impl Parse for FieldConfideArgs {
                     return Err(syn::Error::new_spanned(
                         &nv.value,
                         "expected a string literal, e.g. default_duration = \"10s\"",
+                    ));
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("default_bytes") => {
+                    if let Expr::Lit(lit) = &nv.value {
+                        if let syn::Lit::Str(s) = &lit.lit {
+                            default = Some(FieldDefault::Bytes(s.value()));
+                            continue;
+                        }
+                    }
+                    return Err(syn::Error::new_spanned(
+                        &nv.value,
+                        "expected a string literal, e.g. default_bytes = \"1MiB\"",
                     ));
                 }
                 other => {
@@ -250,6 +265,38 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
                     #[allow(non_snake_case)]
                     fn #fn_name() -> #field_type {
                         ::core::time::Duration::new(#secs, #nanos)
+                    }
+                });
+
+                default_fields.push(quote! { #field_name: Self::#fn_name(), });
+            }
+            Some(FieldAnnotation::BytesExpr(s)) => {
+                let bs: bytesize::ByteSize = match s.parse() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return syn::Error::new(
+                            field_name.span(),
+                            format!("invalid byte size: {e}"),
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                };
+                let bytes = bs.as_u64();
+                let fn_name = format_ident!("__confide_default_{}", field_name);
+                let fn_path = format!("{}::{}", struct_name, fn_name);
+
+                attrs_out.push(syn::parse_quote! {
+                    #[serde(with = "confide::bytesize_serde")]
+                });
+                attrs_out.push(syn::parse_quote! {
+                    #[serde(default = #fn_path)]
+                });
+
+                default_fns.push(quote! {
+                    #[allow(non_snake_case)]
+                    fn #fn_name() -> #field_type {
+                        #bytes as #field_type
                     }
                 });
 

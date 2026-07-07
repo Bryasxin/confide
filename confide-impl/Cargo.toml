@@ -1,5 +1,7 @@
 [package]
 name = "confide-impl"
+description = "proc-macro backend for #[confide]"
+repository.workspace = true
 version.workspace = true
 edition.workspace = true
 

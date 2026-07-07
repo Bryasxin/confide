@@ -35,7 +35,7 @@ impl Default for ConfideArgs {
 
 enum FieldAnnotation {
     DefaultExpr(Expr),
-    Optional,
+    DefaultDefault,
     DurationExpr(String),
 }
 
@@ -47,13 +47,12 @@ fn extract_annotation(attrs: &[Attribute]) -> syn::Result<Option<FieldAnnotation
     for attr in attrs {
         if attr.path().is_ident("default") {
             match &attr.meta {
+                Meta::Path(_) => return Ok(Some(FieldAnnotation::DefaultDefault)),
                 Meta::NameValue(nv) => {
                     return Ok(Some(FieldAnnotation::DefaultExpr(nv.value.clone())));
                 }
                 _ => continue,
             }
-        } else if attr.path().is_ident("optional") {
-            return Ok(Some(FieldAnnotation::Optional));
         } else if attr.path().is_ident("duration") {
             match &attr.meta {
                 Meta::NameValue(nv) => {
@@ -123,11 +122,7 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
         let mut attrs_out: Vec<Attribute> = field
             .attrs
             .iter()
-            .filter(|a| {
-                !(a.path().is_ident("default")
-                    || a.path().is_ident("optional")
-                    || a.path().is_ident("duration"))
-            })
+            .filter(|a| !(a.path().is_ident("default") || a.path().is_ident("duration")))
             .cloned()
             .collect();
 
@@ -159,7 +154,7 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
                     default_fields.push(quote! { #field_name: Self::#fn_name(), });
                 }
             }
-            Some(FieldAnnotation::Optional) => {
+            Some(FieldAnnotation::DefaultDefault) => {
                 attrs_out.push(syn::parse_quote! {
                     #[serde(default)]
                 });

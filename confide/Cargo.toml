@@ -4,3 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+humantime-serde = "1.1.1"

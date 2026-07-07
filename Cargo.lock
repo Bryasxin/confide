@@ -3,17 +3,26 @@
 version = 4
 
 [[package]]
+name = "bytesize"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d7c8918969267b2932ffd5655509bbbea0833823058c378876953217f5fc50e"
+
+[[package]]
 name = "confide"
 version = "0.0.0"
 dependencies = [
+ "bytesize",
  "confide-impl",
  "humantime-serde",
+ "serde",
 ]
 
 [[package]]
 name = "confide-impl"
 version = "0.0.0"
 dependencies = [
+ "bytesize",
  "humantime",
  "proc-macro2",
  "quote",

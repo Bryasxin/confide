@@ -7,4 +7,6 @@ edition.workspace = true
 
 [dependencies]
 humantime-serde = "1.1.1"
+bytesize = "2.4.2"
+serde = "1.0.228"
 confide-impl = { path = "../confide-impl" }

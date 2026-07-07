@@ -83,14 +83,7 @@ pub fn confide(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     #[serde(default)]
                 });
 
-                default_fns.push(quote! {
-                    #[allow(non_snake_case)]
-                    fn #fn_name() -> #field_type {
-                        ::core::default::Default::default()
-                    }
-                });
-
-                default_fields.push(quote! { #field_name: Self::#fn_name(), });
+                default_fields.push(quote! { #field_name: ::core::default::Default::default(), });
             }
             None => {}
         }

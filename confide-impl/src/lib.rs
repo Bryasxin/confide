@@ -1,6 +1,37 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Expr, ItemStruct, Meta, parse_macro_input, spanned::Spanned};
+use syn::{
+    Attribute, Expr, ItemStruct, Meta, parse::Parse, parse::ParseStream, parse_macro_input,
+    spanned::Spanned,
+};
+
+struct ConfideArgs {
+    no_default: bool,
+}
+
+impl Parse for ConfideArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut no_default = false;
+        let vars = input.parse_terminated(syn::Ident::parse, syn::Token![,])?;
+        for var in vars {
+            if var == "no_default" {
+                no_default = true;
+            } else {
+                return Err(syn::Error::new(
+                    var.span(),
+                    format!("unknown confide argument: `{var}`"),
+                ));
+            }
+        }
+        Ok(ConfideArgs { no_default })
+    }
+}
+
+impl Default for ConfideArgs {
+    fn default() -> Self {
+        ConfideArgs { no_default: false }
+    }
+}
 
 enum FieldAnnotation {
     DefaultExpr(Expr),
@@ -28,7 +59,15 @@ fn extract_annotation(attrs: &[Attribute]) -> Option<FieldAnnotation> {
 }
 
 #[proc_macro_attribute]
-pub fn confide(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = if attr.is_empty() {
+        ConfideArgs::default()
+    } else {
+        match syn::parse::<ConfideArgs>(attr) {
+            Ok(args) => args,
+            Err(e) => return e.to_compile_error().into(),
+        }
+    };
     let struct_input = parse_macro_input!(item as ItemStruct);
     let struct_name = &struct_input.ident;
     let struct_visibility = &struct_input.vis;
@@ -108,11 +147,15 @@ pub fn confide(_attr: TokenStream, item: TokenStream) -> TokenStream {
         });
     }
 
-    let default_impl = quote! {
-        impl #impl_generics Default for #struct_name #type_generics #where_clause {
-            fn default() -> Self {
-                Self {
-                    #(#default_fields)*
+    let default_impl = if args.no_default {
+        quote! {}
+    } else {
+        quote! {
+            impl #impl_generics Default for #struct_name #type_generics #where_clause {
+                fn default() -> Self {
+                    Self {
+                        #(#default_fields)*
+                    }
                 }
             }
         }

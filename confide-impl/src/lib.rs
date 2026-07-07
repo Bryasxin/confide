@@ -7,6 +7,10 @@ enum FieldAnnotation {
     Optional,
 }
 
+fn is_expr_path(expr: &Expr) -> bool {
+    matches!(expr, Expr::Path(_))
+}
+
 fn extract_annotation(attrs: &[Attribute]) -> Option<FieldAnnotation> {
     attrs.iter().find_map(|attr| {
         if attr.path().is_ident("default") {
@@ -60,23 +64,33 @@ pub fn confide(_attr: TokenStream, item: TokenStream) -> TokenStream {
             .cloned()
             .collect();
 
-        let fn_name = format_ident!("__confide_default_{}", field_name);
-        let fn_path = format!("{}::{}", struct_name, fn_name);
-
         match annotation {
             Some(FieldAnnotation::DefaultExpr(expr)) => {
-                attrs_out.push(syn::parse_quote! {
-                    #[serde(default = #fn_path)]
-                });
+                if is_expr_path(&expr) {
+                    let path_str = quote!(#expr).to_string();
 
-                default_fns.push(quote! {
-                    #[allow(non_snake_case)]
-                    fn #fn_name() -> #field_type {
-                        #expr
-                    }
-                });
+                    attrs_out.push(syn::parse_quote! {
+                        #[serde(default = #path_str)]
+                    });
 
-                default_fields.push(quote! { #field_name: Self::#fn_name(), });
+                    default_fields.push(quote! { #field_name: #expr(), });
+                } else {
+                    let fn_name = format_ident!("__confide_default_{}", field_name);
+                    let fn_path = format!("{}::{}", struct_name, fn_name);
+
+                    attrs_out.push(syn::parse_quote! {
+                        #[serde(default = #fn_path)]
+                    });
+
+                    default_fns.push(quote! {
+                        #[allow(non_snake_case)]
+                        fn #fn_name() -> #field_type {
+                            #expr
+                        }
+                    });
+
+                    default_fields.push(quote! { #field_name: Self::#fn_name(), });
+                }
             }
             Some(FieldAnnotation::Optional) => {
                 attrs_out.push(syn::parse_quote! {

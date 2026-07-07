@@ -7,15 +7,19 @@ use syn::{
 
 struct ConfideArgs {
     no_default: bool,
+    no_debug: bool,
 }
 
 impl Parse for ConfideArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut no_default = false;
+        let mut no_debug = false;
         let vars = input.parse_terminated(syn::Ident::parse, syn::Token![,])?;
         for var in vars {
             if var == "no_default" {
                 no_default = true;
+            } else if var == "no_debug" {
+                no_debug = true;
             } else {
                 return Err(syn::Error::new(
                     var.span(),
@@ -23,13 +27,19 @@ impl Parse for ConfideArgs {
                 ));
             }
         }
-        Ok(ConfideArgs { no_default })
+        Ok(ConfideArgs {
+            no_default,
+            no_debug,
+        })
     }
 }
 
 impl Default for ConfideArgs {
     fn default() -> Self {
-        ConfideArgs { no_default: false }
+        ConfideArgs {
+            no_default: false,
+            no_debug: false,
+        }
     }
 }
 
@@ -109,6 +119,7 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut default_fns = Vec::new();
     let mut field_outputs = Vec::new();
     let mut default_fields = Vec::new();
+    let mut debug_fields: Vec<(syn::Ident, bool)> = Vec::new();
 
     for field in fields.iter() {
         let field_name = field.ident.as_ref().expect("named field");
@@ -122,7 +133,11 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
         let mut attrs_out: Vec<Attribute> = field
             .attrs
             .iter()
-            .filter(|a| !(a.path().is_ident("default") || a.path().is_ident("duration")))
+            .filter(|a| {
+                !(a.path().is_ident("default")
+                    || a.path().is_ident("duration")
+                    || a.path().is_ident("secret"))
+            })
             .cloned()
             .collect();
 
@@ -197,6 +212,9 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
             None => {}
         }
 
+        let is_secret = field.attrs.iter().any(|a| a.path().is_ident("secret"));
+        debug_fields.push((field_name.clone(), is_secret));
+
         field_outputs.push(quote! {
             #(#attrs_out)*
             #field_visibility #field_name: #field_type,
@@ -217,6 +235,28 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    let debug_impl = if args.no_debug {
+        quote! {}
+    } else {
+        let field_entries = debug_fields.iter().map(|(name, secret)| {
+            let name_str = name.to_string();
+            if *secret {
+                quote! { .field(#name_str, &"***") }
+            } else {
+                quote! { .field(#name_str, &self.#name) }
+            }
+        });
+        quote! {
+            impl #impl_generics ::core::fmt::Debug for #struct_name #type_generics #where_clause {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct(stringify!(#struct_name))
+                        #(#field_entries)*
+                        .finish()
+                }
+            }
+        }
+    };
+
     let expanded = quote! {
         #(#struct_outer_attrs)*
         #struct_visibility struct #struct_name #type_generics #where_clause {
@@ -228,6 +268,7 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         #default_impl
+        #debug_impl
     };
     expanded.into()
 }

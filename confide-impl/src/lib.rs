@@ -49,43 +49,91 @@ enum FieldAnnotation {
     DurationExpr(String),
 }
 
+struct FieldAttr {
+    annotation: Option<FieldAnnotation>,
+    secret: bool,
+}
+
 fn is_expr_path(expr: &Expr) -> bool {
     matches!(expr, Expr::Path(_))
 }
 
-fn extract_annotation(attrs: &[Attribute]) -> syn::Result<Option<FieldAnnotation>> {
+fn extract_field_attr(attrs: &[Attribute]) -> syn::Result<FieldAttr> {
     for attr in attrs {
-        if attr.path().is_ident("default") {
+        if attr.path().is_ident("confide") {
             match &attr.meta {
-                Meta::Path(_) => return Ok(Some(FieldAnnotation::DefaultDefault)),
-                Meta::NameValue(nv) => {
-                    return Ok(Some(FieldAnnotation::DefaultExpr(nv.value.clone())));
+                Meta::List(list) => {
+                    let args: FieldConfideArgs = syn::parse2(list.tokens.clone())?;
+                    let annotation = match args.default {
+                        Some(FieldDefault::Expr(expr)) => Some(FieldAnnotation::DefaultExpr(expr)),
+                        Some(FieldDefault::Bare) => Some(FieldAnnotation::DefaultDefault),
+                        Some(FieldDefault::Duration(s)) => Some(FieldAnnotation::DurationExpr(s)),
+                        None => None,
+                    };
+                    return Ok(FieldAttr {
+                        annotation,
+                        secret: args.secret,
+                    });
                 }
                 _ => continue,
             }
-        } else if attr.path().is_ident("duration") {
-            match &attr.meta {
-                Meta::NameValue(nv) => {
+        }
+    }
+    Ok(FieldAttr {
+        annotation: None,
+        secret: false,
+    })
+}
+
+enum FieldDefault {
+    Expr(Expr),
+    Bare,
+    Duration(String),
+}
+
+struct FieldConfideArgs {
+    default: Option<FieldDefault>,
+    secret: bool,
+}
+
+impl Parse for FieldConfideArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut default = None;
+        let mut secret = false;
+        let metas = input.parse_terminated(Meta::parse, syn::Token![,])?;
+        for meta in metas {
+            match &meta {
+                Meta::Path(p) if p.is_ident("default") => {
+                    default = Some(FieldDefault::Bare);
+                }
+                Meta::Path(p) if p.is_ident("secret") => {
+                    secret = true;
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("default") => {
+                    default = Some(FieldDefault::Expr(nv.value.clone()));
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("default_duration") => {
                     if let Expr::Lit(lit) = &nv.value {
                         if let syn::Lit::Str(s) = &lit.lit {
-                            return Ok(Some(FieldAnnotation::DurationExpr(s.value())));
+                            default = Some(FieldDefault::Duration(s.value()));
+                            continue;
                         }
                     }
                     return Err(syn::Error::new_spanned(
                         &nv.value,
-                        "expected a string literal, e.g. #[duration = \"10s\"]",
+                        "expected a string literal, e.g. default_duration = \"10s\"",
                     ));
                 }
-                _ => {
+                other => {
                     return Err(syn::Error::new_spanned(
-                        attr,
-                        "expected a string literal, e.g. #[duration = \"10s\"]",
+                        other,
+                        "unexpected confide field argument",
                     ));
                 }
             }
         }
+        Ok(FieldConfideArgs { default, secret })
     }
-    Ok(None)
 }
 
 #[proc_macro_attribute]
@@ -125,19 +173,17 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
         let field_name = field.ident.as_ref().expect("named field");
         let field_visibility = &field.vis;
         let field_type = &field.ty;
-        let annotation = match extract_annotation(&field.attrs) {
+        let field_attr = match extract_field_attr(&field.attrs) {
             Ok(a) => a,
             Err(e) => return e.to_compile_error().into(),
         };
+        let annotation = field_attr.annotation;
+        let is_secret = field_attr.secret;
 
         let mut attrs_out: Vec<Attribute> = field
             .attrs
             .iter()
-            .filter(|a| {
-                !(a.path().is_ident("default")
-                    || a.path().is_ident("duration")
-                    || a.path().is_ident("secret"))
-            })
+            .filter(|a| !a.path().is_ident("confide"))
             .cloned()
             .collect();
 
@@ -212,7 +258,6 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
             None => {}
         }
 
-        let is_secret = field.attrs.iter().any(|a| a.path().is_ident("secret"));
         debug_fields.push((field_name.clone(), is_secret));
 
         field_outputs.push(quote! {

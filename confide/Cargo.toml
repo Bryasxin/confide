@@ -11,7 +11,7 @@ readme.workspace = true
 humantime-serde.workspace = true
 bytesize.workspace = true
 serde.workspace = true
-confide-impl = { path = "../confide-impl", version = "0.0.0" }
+confide-impl = { path = "../confide-impl", version = "0.1.0" }
 
 [dev-dependencies]
 insta = "1.48.0"

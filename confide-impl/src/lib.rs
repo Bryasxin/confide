@@ -77,7 +77,18 @@ fn extract_field_attr(attrs: &[Attribute]) -> syn::Result<FieldAttr> {
                         secret: args.secret,
                     });
                 }
-                _ => continue,
+                Meta::Path(_) => {
+                    return Err(syn::Error::new_spanned(
+                        &attr.meta,
+                        "bare `#[confide]` on a field is not supported; did you mean `#[confide(default)]`?",
+                    ));
+                }
+                Meta::NameValue(_) => {
+                    return Err(syn::Error::new_spanned(
+                        &attr.meta,
+                        "`#[confide = ...]` on a field is not supported; did you mean `#[confide(default = ...)]`?",
+                    ));
+                }
             }
         }
     }

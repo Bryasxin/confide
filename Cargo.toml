@@ -7,3 +7,12 @@ description = "#[confide]: derive Default + Debug with serde defaults for config
 repository = "https://github.com/Bryasxin/confide"
 edition = "2024"
 version = "0.0.0"
+
+[workspace.dependencies]
+humantime-serde = "1.1.1"
+bytesize = "2.4.2"
+serde = "1.0.228"
+proc-macro2 = "1.0.106"
+quote = "1.0.46"
+syn = "2.0.118"
+humantime = "2.4.0"

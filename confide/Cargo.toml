@@ -6,7 +6,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-humantime-serde = "1.1.1"
-bytesize = "2.4.2"
-serde = "1.0.228"
+humantime-serde.workspace = true
+bytesize.workspace = true
+serde.workspace = true
 confide-impl = { path = "../confide-impl" }

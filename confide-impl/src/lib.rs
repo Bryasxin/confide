@@ -176,7 +176,11 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
     let struct_name = &struct_input.ident;
     let struct_visibility = &struct_input.vis;
     let (impl_generics, type_generics, where_clause) = struct_input.generics.split_for_impl();
-    let struct_outer_attrs = &struct_input.attrs;
+    let struct_outer_attrs: Vec<_> = struct_input
+        .attrs
+        .iter()
+        .filter(|a| !a.path().is_ident("confide"))
+        .collect();
 
     let fields = match &struct_input.fields {
         syn::Fields::Named(fields_name) => &fields_name.named,
@@ -297,8 +301,16 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let fn_name = format_ident!("__confide_default_{}", field_name);
                 let fn_path = format!("{}::{}", struct_name, fn_name);
 
+                let ser_fn_name = format_ident!("__confide_serialize_bytes_{}", field_name);
+                let de_fn_name = format_ident!("__confide_deserialize_bytes_{}", field_name);
+                let ser_path = format!("{}::{}", struct_name, ser_fn_name);
+                let de_path = format!("{}::{}", struct_name, de_fn_name);
+
                 attrs_out.push(syn::parse_quote! {
-                    #[serde(with = "confide::bytesize_serde")]
+                    #[serde(
+                        serialize_with = #ser_path,
+                        deserialize_with = #de_path
+                    )]
                 });
                 attrs_out.push(syn::parse_quote! {
                     #[serde(default = #fn_path)]
@@ -307,7 +319,86 @@ pub fn confide(attr: TokenStream, item: TokenStream) -> TokenStream {
                 default_fns.push(quote! {
                     #[allow(non_snake_case)]
                     fn #fn_name() -> #field_type {
-                        #bytes as #field_type
+                        ::core::convert::TryInto::<#field_type>::try_into(#bytes)
+                            .expect("default_bytes value out of range for field type")
+                    }
+                });
+                default_fns.push(quote! {
+                    #[allow(non_snake_case, unused)]
+                    fn #ser_fn_name<__S: ::serde::Serializer>(
+                        val: &#field_type,
+                        s: __S,
+                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        let bytes: u64 = ::core::convert::TryInto::<u64>::try_into(*val)
+                            .map_err(|_| {
+                                ::serde::ser::Error::custom(
+                                    ::core::format_args!(
+                                        "byte size field value out of range for u64"
+                                    ),
+                                )
+                            })?;
+                        ::serde::Serialize::serialize(
+                            &::confide::bytesize::ByteSize::b(bytes)
+                                .display()
+                                .iec()
+                                .to_string(),
+                            s,
+                        )
+                    }
+                });
+                default_fns.push(quote! {
+                    #[allow(non_snake_case, unused)]
+                    fn #de_fn_name<'__de, __D: ::serde::Deserializer<'__de>>(
+                        d: __D,
+                    ) -> ::core::result::Result<#field_type, __D::Error> {
+                        struct __ConfideBytesVisitor;
+                        impl<'__de2> ::serde::de::Visitor<'__de2> for __ConfideBytesVisitor {
+                            type Value = u64;
+                            fn expecting(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                                f.write_str("a byte size string like '1MiB' or an integer")
+                            }
+                            fn visit_u64<__E: ::serde::de::Error>(
+                                self,
+                                v: u64,
+                            ) -> ::core::result::Result<u64, __E> {
+                                Ok(v)
+                            }
+                            fn visit_i64<__E: ::serde::de::Error>(
+                                self,
+                                v: i64,
+                            ) -> ::core::result::Result<u64, __E> {
+                                u64::try_from(v).map_err(|_| {
+                                    __E::invalid_value(
+                                        ::serde::de::Unexpected::Signed(v),
+                                        &"non-negative integer",
+                                    )
+                                })
+                            }
+                            fn visit_str<__E: ::serde::de::Error>(
+                                self,
+                                v: &str,
+                            ) -> ::core::result::Result<u64, __E> {
+                                v.parse::<::confide::bytesize::ByteSize>()
+                                    .map(|bs| bs.as_u64())
+                                    .map_err(|_| {
+                                        __E::invalid_value(::serde::de::Unexpected::Str(v), &self)
+                                    })
+                            }
+                        }
+                        let val: u64 = if d.is_human_readable() {
+                            d.deserialize_any(__ConfideBytesVisitor)?
+                        } else {
+                            d.deserialize_u64(__ConfideBytesVisitor)?
+                        };
+                        #field_type::try_from(val).map_err(|_| {
+                            ::serde::de::Error::invalid_value(
+                                ::serde::de::Unexpected::Unsigned(val),
+                                &concat!(
+                                    "a byte size value fitting in ",
+                                    ::core::stringify!(#field_type),
+                                ),
+                            )
+                        })
                     }
                 });
 

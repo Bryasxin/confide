@@ -1,0 +1,11 @@
+---
+source: confide/examples/quick_start.rs
+expression: config
+---
+MyConfig {
+    port: 8080,
+    timeout: 30s,
+    buffer_size: 1048576,
+    mode: "",
+    bind_address: "***",
+}

@@ -8,6 +8,7 @@ repository = "https://github.com/Bryasxin/confide"
 edition = "2024"
 version = "0.0.0"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
 
 [workspace.dependencies]
 humantime-serde = "1.1.1"

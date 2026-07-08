@@ -7,6 +7,7 @@ description = "#[confide]: derive Default + Debug with serde defaults for config
 repository = "https://github.com/Bryasxin/confide"
 edition = "2024"
 version = "0.0.0"
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 humantime-serde = "1.1.1"

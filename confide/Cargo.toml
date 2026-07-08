@@ -9,4 +9,4 @@ edition.workspace = true
 humantime-serde.workspace = true
 bytesize.workspace = true
 serde.workspace = true
-confide-impl = { path = "../confide-impl" }
+confide-impl = { path = "../confide-impl", version = "0.0.0" }
